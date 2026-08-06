@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <Version>0.1.0.0</Version>
-    <PackageProjectUrl>https://github.com/REPLACE_ME/FcEventCalendar</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/NyxStormborn/fc-event-calendar</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
