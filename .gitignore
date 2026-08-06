@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars
+.vs/
+.idea/
+dist/
+bin/
+obj/
+*.user
+*.dll
+*.zip
