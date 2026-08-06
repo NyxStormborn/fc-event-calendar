@@ -11,15 +11,18 @@ An in-game event calendar for Final Fantasy XIV Free Companies. Members can crea
 - Automatic cleanup: events and registrations are removed 24 hours after the event start time.
 - FC access code; the code is stored only as a Cloudflare Worker secret.
 
-## For FC members: install the plugin
+## For FC members: install through Dalamud
 
-1. Download the latest `FcEventCalendar.dll` from the repository's **Releases** page.
-2. Save the DLL in a permanent folder, for example `C:\FFXIV\Plugins\FcEventCalendar`.
-3. In Dalamud, open the **Developer Plugins** window and add the DLL as a development plugin.
-4. Open the plugin with `/fcevents`.
-5. Enter the FC access code once. It is not saved on your computer by the plugin.
+1. In game, open the Dalamud Plugin Installer with `/xlplugins`.
+2. Open **Settings** and find **Custom Plugin Repositories**.
+3. Add this URL:
 
-The configured server address is included by default. You only need to change it if your FC administrator gives you a new address.
+   `https://raw.githubusercontent.com/NyxStormborn/fc-event-calendar/main/pluginmaster.json`
+
+4. Return to the Available Plugins list, find **FC Event Calendar**, and click **Install**.
+5. Open the plugin with `/fcevents` and enter the FC access code once.
+
+The configured server address is included by default. You only need to change it if your FC administrator gives you a new address. Updates will appear through the normal Dalamud installer.
 
 ## For FC administrators: Worker deployment
 
