@@ -189,6 +189,7 @@ public sealed class CalendarWindow : Window
         foreach (var item in visibleEvents)
         {
             ImGui.Text($"{item.StartsAt.ToLocalTime():ddd, dd.MM. HH:mm}  {item.Title}");
+            if (item.Source == "raid-helper") ImGui.TextDisabled("Managed by Raid Helper");
             if (!string.IsNullOrWhiteSpace(item.Description)) ImGui.TextWrapped(item.Description);
             ImGui.TextDisabled($"Attendees: {string.Join(", ", item.Registrations.ConvertAll(x => x.CharacterName + " (" + x.WorldName + ")"))}");
             var joined = item.Registrations.Exists(x => x.CharacterName == character && x.WorldName == world);
@@ -440,6 +441,7 @@ public sealed class CalendarEvent
     public string Description { get; set; } = "";
     public DateTimeOffset StartsAt { get; set; }
     public string CreatedByMemberId { get; set; } = "";
+    public string Source { get; set; } = "manual";
     public List<Registration> Registrations { get; set; } = [];
 }
 

@@ -3,8 +3,8 @@
     "Author": "NyxStormborn",
     "Name": "FC Event Calendar",
     "InternalName": "FcEventCalendar",
-    "AssemblyVersion": "0.1.0.0",
-    "Description": "A shared Free Company event calendar with sign-ups, reminders, and automatic cleanup.",
+    "AssemblyVersion": "0.2.0.0",
+    "Description": "A shared Free Company event calendar with sign-ups, reminders, automatic cleanup, and Raid Helper sync.",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "LoadRequiredState": 0,
@@ -16,9 +16,9 @@
     "RepoUrl": "https://github.com/NyxStormborn/fc-event-calendar",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.1.0/FcEventCalendar-0.1.0.zip",
-    "DownloadLinkTesting": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.1.0/FcEventCalendar-0.1.0.zip",
-    "DownloadLinkUpdate": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.1.0/FcEventCalendar-0.1.0.zip",
-    "LastUpdate": "1786020676"
+    "DownloadLinkInstall": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.2.0/FcEventCalendar-0.2.0.zip",
+    "DownloadLinkTesting": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.2.0/FcEventCalendar-0.2.0.zip",
+    "DownloadLinkUpdate": "https://github.com/NyxStormborn/fc-event-calendar/releases/download/v0.2.0/FcEventCalendar-0.2.0.zip",
+    "LastUpdate": "1786122756"
   }
 ]

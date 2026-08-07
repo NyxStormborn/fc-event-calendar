@@ -15,6 +15,10 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "vars": {
+    "RAID_HELPER_SERVER_ID": "742815677236248746",
+    "RAID_HELPER_CHANNEL_ID": "742841036665127012"
+  },
   "triggers": {
     "crons": ["0 * * * *"]
   }

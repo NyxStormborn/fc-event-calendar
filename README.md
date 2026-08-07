@@ -9,6 +9,7 @@ An in-game event calendar for Final Fantasy XIV Free Companies. Members can crea
 - Event creator can edit or delete their own events.
 - Configurable reminders with an optional Windows notification sound.
 - Automatic cleanup: events and registrations are removed 24 hours after the event start time.
+- Raid Helper integration: existing events are imported, while new events, edits, and deletions stay in sync.
 - FC access code; the code is stored only as a Cloudflare Worker secret.
 
 ## For FC members: install through Dalamud
@@ -40,6 +41,17 @@ Set or replace the access code securely through Cloudflare:
 ```powershell
 npx.cmd wrangler secret put FC_ACCESS_CODE
 ```
+
+### Raid Helper integration
+
+The Worker is configured for the FC's Raid Helper server and event channel. Keep both keys secret and set them interactively:
+
+```powershell
+npx.cmd wrangler secret put RAID_HELPER_WEBHOOK_KEY
+npx.cmd wrangler secret put RAID_HELPER_API_KEY
+```
+
+Configure Raid Helper's `event.create`, `event.update`, and `event.delete` webhooks to use the matching `/v1/integrations/raid-helper/` URLs on the Worker. The server API key and webhook key must never be committed or shared.
 
 ## Building from source
 

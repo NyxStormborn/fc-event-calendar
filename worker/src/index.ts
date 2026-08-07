@@ -1,5 +1,9 @@
 type WorkerEnv = Cloudflare.Env & {
   FC_ACCESS_CODE: string;
+  RAID_HELPER_WEBHOOK_KEY: string;
+  RAID_HELPER_API_KEY?: string;
+  RAID_HELPER_SERVER_ID: string;
+  RAID_HELPER_CHANNEL_ID: string;
 };
 
 type Member = { id: string; character_name: string; world_name: string };
@@ -12,6 +16,24 @@ type EventRow = {
   created_by_member_id: string;
   created_at: string;
   updated_at: string;
+  source: string;
+  external_event_id: string | null;
+  external_channel_id: string | null;
+};
+
+type RaidHelperEvent = {
+  id: string;
+  serverId: string;
+  channelId: string;
+  title: string;
+  description: string;
+  startTime: number;
+  endTime: number;
+};
+
+type RaidHelperEventsResponse = {
+  pages: number;
+  postedEvents: unknown[];
 };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -29,7 +51,7 @@ async function sha256(value: string): Promise<string> {
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function matchesAccessCode(provided: string, expected: string): Promise<boolean> {
+async function matchesSecret(provided: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [providedHash, expectedHash] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(provided)),
@@ -83,8 +105,98 @@ async function eventDetails(env: WorkerEnv, event: EventRow) {
     createdByMemberId: event.created_by_member_id,
     createdAt: event.created_at,
     updatedAt: event.updated_at,
+    source: event.source,
     registrations: registrations.results,
   };
+}
+
+function readRaidHelperEvent(body: Record<string, unknown>): RaidHelperEvent | null {
+  const id = readText(body.id, 32);
+  const serverId = readText(body.serverId, 32);
+  const channelId = readText(body.channelId, 32);
+  const title = readText(body.title, 120);
+  const description = typeof body.description === "string" && body.description.length <= 2000 ? body.description.trim() : "";
+  const startTime = typeof body.startTime === "number" && Number.isFinite(body.startTime) ? body.startTime : NaN;
+  const endTime = typeof body.endTime === "number" && Number.isFinite(body.endTime) ? body.endTime : NaN;
+  if (!id || !serverId || !channelId || !title || Number.isNaN(startTime)) return null;
+  return { id, serverId, channelId, title, description, startTime, endTime };
+}
+
+function isoFromUnixSeconds(value: number): string | null {
+  const date = new Date(value * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function upsertRaidHelperEvent(env: WorkerEnv, event: RaidHelperEvent): Promise<void> {
+  if (event.serverId !== env.RAID_HELPER_SERVER_ID || event.channelId !== env.RAID_HELPER_CHANNEL_ID)
+    throw new Error("Event is not from the configured Raid Helper channel.");
+
+  const startsAt = isoFromUnixSeconds(event.startTime);
+  const endsAt = Number.isNaN(event.endTime) ? null : isoFromUnixSeconds(event.endTime);
+  if (!startsAt || (event.endTime && !endsAt)) throw new Error("Raid Helper event has invalid timestamps.");
+
+  const timestamp = now();
+  await env.DB.prepare(
+    "INSERT INTO events (id, title, description, starts_at, ends_at, created_by_member_id, created_at, updated_at, source, external_event_id, external_channel_id) " +
+    "VALUES (?, ?, ?, ?, ?, 'raid-helper', ?, ?, 'raid-helper', ?, ?) " +
+    "ON CONFLICT(external_event_id) DO UPDATE SET title = excluded.title, description = excluded.description, starts_at = excluded.starts_at, ends_at = excluded.ends_at, updated_at = excluded.updated_at, external_channel_id = excluded.external_channel_id",
+  ).bind(id(), event.title, event.description, startsAt, endsAt, timestamp, timestamp, event.id, event.channelId).run();
+}
+
+async function syncRaidHelperEvents(env: WorkerEnv): Promise<number> {
+  const apiKey = env.RAID_HELPER_API_KEY?.trim();
+  if (!apiKey) return 0;
+
+  let imported = 0;
+  for (let page = 1; page <= 50; page++) {
+    const response = await fetch(`https://raid-helper.xyz/api/v4/servers/${env.RAID_HELPER_SERVER_ID}/events`, {
+      headers: {
+        Authorization: apiKey,
+        Page: String(page),
+        ChannelFilter: env.RAID_HELPER_CHANNEL_ID,
+      },
+    });
+    if (!response.ok) throw new Error(`Raid Helper API returned ${response.status}.`);
+
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Invalid Raid Helper API response.");
+    const data = payload as Partial<RaidHelperEventsResponse>;
+    if (!Array.isArray(data.postedEvents)) throw new Error("Raid Helper API response contains no events.");
+
+    for (const rawEvent of data.postedEvents) {
+      if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) continue;
+      const event = readRaidHelperEvent(rawEvent as Record<string, unknown>);
+      if (!event || event.serverId !== env.RAID_HELPER_SERVER_ID || event.channelId !== env.RAID_HELPER_CHANNEL_ID) continue;
+      await upsertRaidHelperEvent(env, event);
+      imported++;
+    }
+
+    const pages = typeof data.pages === "number" && Number.isInteger(data.pages) && data.pages > 0 ? data.pages : page;
+    if (page >= pages) break;
+  }
+  return imported;
+}
+
+async function handleRaidHelperWebhook(request: Request, env: WorkerEnv, action: "create" | "update" | "delete"): Promise<Response> {
+  const authorization = request.headers.get("authorization");
+  if (!authorization || !(await matchesSecret(authorization, env.RAID_HELPER_WEBHOOK_KEY))) return fail("Unauthorized webhook.", 401);
+  const body = await requestBody(request);
+  const eventId = body ? readText(body.id, 32) : null;
+  if (!body || !eventId) return fail("Invalid Raid Helper webhook payload.");
+
+  if (action === "delete") {
+    await env.DB.prepare("DELETE FROM events WHERE source = 'raid-helper' AND external_event_id = ?").bind(eventId).run();
+    return json({ ok: true });
+  }
+
+  const event = readRaidHelperEvent(body);
+  if (!event) return fail("Invalid Raid Helper event payload.");
+  try {
+    await upsertRaidHelperEvent(env, event);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Could not import Raid Helper event.", 400);
+  }
+  return json({ ok: true });
 }
 
 async function removeExpiredEvents(env: WorkerEnv): Promise<void> {
@@ -107,13 +219,20 @@ export default {
 
     if (request.method === "GET" && path === "/health") return json({ ok: true });
 
+    if (request.method === "POST" && path === "/v1/integrations/raid-helper/event.create")
+      return handleRaidHelperWebhook(request, env, "create");
+    if (request.method === "POST" && (path === "/v1/integrations/raid-helper/event.update" || path === "/v1/integrations/raid-helper/event.edit"))
+      return handleRaidHelperWebhook(request, env, "update");
+    if (request.method === "POST" && path === "/v1/integrations/raid-helper/event.delete")
+      return handleRaidHelperWebhook(request, env, "delete");
+
     if (request.method === "POST" && path === "/v1/enroll") {
       const body = await requestBody(request);
       const accessCode = body ? readText(body.accessCode, 200) : null;
       const characterName = body ? readText(body.characterName, 80) : null;
       const worldName = body ? readText(body.worldName, 80) : null;
       if (!accessCode || !characterName || !worldName) return fail("Access code, character name, and world are required.");
-      if (!(await matchesAccessCode(accessCode, env.FC_ACCESS_CODE))) return fail("Invalid FC access code.", 401);
+      if (!(await matchesSecret(accessCode, env.FC_ACCESS_CODE))) return fail("Invalid FC access code.", 401);
 
       const token = crypto.getRandomValues(new Uint8Array(32));
       const deviceToken = btoa(String.fromCharCode(...token)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
@@ -133,6 +252,14 @@ export default {
     }
 
     if (request.method === "GET" && path === "/v1/events") {
+      const importedEvents = await env.DB.prepare("SELECT COUNT(*) AS count FROM events WHERE source = 'raid-helper'").first<{ count: number }>();
+      if ((importedEvents?.count ?? 0) === 0) {
+        try {
+          await syncRaidHelperEvents(env);
+        } catch (error) {
+          console.error("Initial Raid Helper sync failed", error);
+        }
+      }
       const from = url.searchParams.get("from") ?? "0000-01-01T00:00:00.000Z";
       const until = url.searchParams.get("until") ?? "9999-12-31T23:59:59.999Z";
       const events = await env.DB.prepare(
@@ -152,7 +279,11 @@ export default {
       }
       if (endsAt && Date.parse(endsAt) < Date.parse(startsAt)) return fail("The end time cannot be before the start time.");
 
-      const event: EventRow = { id: id(), title, description, starts_at: startsAt, ends_at: endsAt, created_by_member_id: member.id, created_at: now(), updated_at: now() };
+      const event: EventRow = {
+        id: id(), title, description, starts_at: startsAt, ends_at: endsAt,
+        created_by_member_id: member.id, created_at: now(), updated_at: now(),
+        source: "manual", external_event_id: null, external_channel_id: null,
+      };
       await env.DB.prepare(
         "INSERT INTO events (id, title, description, starts_at, ends_at, created_by_member_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       ).bind(event.id, event.title, event.description, event.starts_at, event.ends_at, event.created_by_member_id, event.created_at, event.updated_at).run();
@@ -208,5 +339,10 @@ export default {
   },
   async scheduled(_controller, env): Promise<void> {
     await removeExpiredEvents(env);
+    try {
+      await syncRaidHelperEvents(env);
+    } catch (error) {
+      console.error("Scheduled Raid Helper sync failed", error);
+    }
   },
 } satisfies ExportedHandler<WorkerEnv>;
